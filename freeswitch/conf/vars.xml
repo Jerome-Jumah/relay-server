@@ -1,0 +1,7 @@
+<include>
+  <X-PRE-PROCESS cmd="set" data="domain=@@SIP_DOMAIN@@"/>
+  <X-PRE-PROCESS cmd="set" data="external_sip_ip=@@PUBLIC_IP@@"/>
+  <X-PRE-PROCESS cmd="set" data="external_rtp_ip=@@PUBLIC_IP@@"/>
+  <X-PRE-PROCESS cmd="set" data="global_codec_prefs=OPUS,VP8"/>
+  <X-PRE-PROCESS cmd="set" data="suppress_cng=true"/>
+</include>

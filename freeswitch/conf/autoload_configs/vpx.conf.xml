@@ -1,0 +1,9 @@
+<configuration name="vpx.conf" description="Core VP8 codec">
+  <settings>
+    <param name="max-bitrate" value="2mb"/>
+    <param name="rtp-slice-size" value="1200"/>
+  </settings>
+  <profiles>
+    <profile name="vp8"/>
+  </profiles>
+</configuration>

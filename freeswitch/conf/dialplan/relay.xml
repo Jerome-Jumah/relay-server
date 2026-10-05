@@ -1,0 +1,19 @@
+<include>
+  <context name="relay">
+    <extension name="extension-to-extension">
+      <condition field="destination_number" expression="^(@@EXTENSION_RANGE_PATTERN@@)$">
+        <action application="set" data="hangup_after_bridge=true"/>
+        <action application="set" data="call_timeout=30"/>
+        <!-- The receiving leg must offer WebRTC media, even before its answer. -->
+        <action application="export" data="nolocal:media_webrtc=true"/>
+        <action application="export" data="nolocal:rtp_secure_media=true"/>
+        <action application="bridge" data="user/${destination_number}@$${domain}"/>
+      </condition>
+    </extension>
+    <extension name="reject-other-destinations">
+      <condition>
+        <action application="hangup" data="UNALLOCATED_NUMBER"/>
+      </condition>
+    </extension>
+  </context>
+</include>

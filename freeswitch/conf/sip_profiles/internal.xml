@@ -1,0 +1,39 @@
+<profile name="internal">
+  <domains>
+    <domain name="$${domain}" alias="true" parse="false"/>
+  </domains>
+  <settings>
+    <param name="shutdown-on-fail" value="true"/>
+    <param name="sip-ip" value="$${local_ip_v4}"/>
+    <param name="rtp-ip" value="$${local_ip_v4}"/>
+    <param name="ext-sip-ip" value="$${external_sip_ip}"/>
+    <param name="ext-rtp-ip" value="$${external_rtp_ip}"/>
+    <!-- TLS ends at Coolify; this listener is not published to the host. -->
+    <param name="ws-binding" value=":5066"/>
+    <param name="sip-port" value="5060"/>
+    <param name="tls" value="false"/>
+    <param name="dialplan" value="XML"/>
+    <param name="context" value="relay"/>
+    <param name="auth-calls" value="true"/>
+    <param name="accept-blind-reg" value="false"/>
+    <param name="accept-blind-auth" value="false"/>
+    <param name="challenge-realm" value="$${domain}"/>
+    <param name="force-register-domain" value="$${domain}"/>
+    <param name="force-register-db-domain" value="$${domain}"/>
+    <param name="force-subscription-domain" value="$${domain}"/>
+    <param name="nonce-ttl" value="60"/>
+    <param name="inbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="outbound-codec-prefs" value="$${global_codec_prefs}"/>
+    <param name="inbound-codec-negotiation" value="generous"/>
+    <param name="inbound-late-negotiation" value="true"/>
+    <param name="local-network-acl" value="localnet.auto"/>
+    <param name="apply-candidate-acl" value="wan_v4.auto"/>
+    <param name="dtmf-type" value="rfc2833"/>
+    <param name="rtp-timer-name" value="soft"/>
+    <param name="rtp-timeout-sec" value="60"/>
+    <param name="rtp-hold-timeout-sec" value="600"/>
+    <param name="manage-presence" value="false"/>
+    <param name="enable-chat" value="false"/>
+    <param name="multiple-registrations" value="false"/>
+  </settings>
+</profile>

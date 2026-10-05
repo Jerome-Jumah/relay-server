@@ -1,0 +1,9 @@
+<configuration name="switch.conf" description="Core and media ports">
+  <settings>
+    <param name="loglevel" value="info"/>
+    <param name="max-sessions" value="100"/>
+    <param name="sessions-per-second" value="10"/>
+    <param name="rtp-start-port" value="@@RTP_START@@"/>
+    <param name="rtp-end-port" value="@@RTP_END@@"/>
+  </settings>
+</configuration>

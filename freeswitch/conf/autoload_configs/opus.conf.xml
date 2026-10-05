@@ -1,0 +1,7 @@
+<configuration name="opus.conf" description="WebRTC audio">
+  <settings>
+    <param name="use-vbr" value="0"/>
+    <param name="use-dtx" value="0"/>
+    <param name="keep-fec-enabled" value="1"/>
+  </settings>
+</configuration>
