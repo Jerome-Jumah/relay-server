@@ -10,14 +10,17 @@ services:
       - SYS_NICE
 
     labels:
-      traefik.enable: "true"
-      traefik.http.routers.relay-sip.rule: "Host(`sip.code4flare.com`)"
-      traefik.http.routers.relay-sip.entrypoints: "https"
-      traefik.http.routers.relay-sip.tls: "true"
-      traefik.http.routers.relay-sip.tls.certresolver: "letsencrypt"
-      traefik.http.routers.relay-sip.service: "relay-sip"
-      traefik.http.services.relay-sip.loadbalancer.server.port: "5066"
-      traefik.http.services.relay-sip.loadbalancer.server.scheme: "http"
+      - "coolify.managed=true"
+      - "coolify.applicationId=14"
+      - "coolify.type=application"
+      - "traefik.enable=true"
+      - "traefik.http.routers.relay-sip.rule=Host(`sip.code4flare.com`)"
+      - "traefik.http.routers.relay-sip.entrypoints=https"
+      - "traefik.http.routers.relay-sip.tls=true"
+      - "traefik.http.routers.relay-sip.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.relay-sip.service=relay-sip"
+      - "traefik.http.services.relay-sip.loadbalancer.server.port=5066"
+      - "traefik.http.services.relay-sip.loadbalancer.server.scheme=http"
 
     environment:
       SIP_DOMAIN: ${SIP_DOMAIN:?Set SIP_DOMAIN}
