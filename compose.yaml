@@ -5,6 +5,10 @@ services:
       context: .
       dockerfile: freeswitch/Dockerfile
     restart: unless-stopped
+
+    cap_add:
+      - SYS_NICE
+
     environment:
       SIP_DOMAIN: ${SIP_DOMAIN:?Set SIP_DOMAIN}
       PUBLIC_IP: ${PUBLIC_IP:?Set PUBLIC_IP}
