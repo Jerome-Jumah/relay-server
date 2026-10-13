@@ -37,7 +37,8 @@ services:
     volumes:
       - freeswitch-state:/var/lib/freeswitch
       - type: bind
-        source: ${WSS_CERT_DIR:?Set WSS_CERT_DIR to the VPS certificate directory}
+        # Coolify validates volume sources before Compose variable interpolation.
+        source: /opt/relay/certs/wss
         target: /etc/freeswitch/wss
         read_only: true
         bind:
