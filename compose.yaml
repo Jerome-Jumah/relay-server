@@ -14,13 +14,11 @@ services:
       - "coolify.applicationId=14"
       - "coolify.type=application"
       - "traefik.enable=true"
-      - "traefik.http.routers.relay-sip.rule=Host(`sip.code4flare.com`)"
-      - "traefik.http.routers.relay-sip.entrypoints=https"
-      - "traefik.http.routers.relay-sip.tls=true"
-      - "traefik.http.routers.relay-sip.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.relay-sip.service=relay-sip"
-      - "traefik.http.services.relay-sip.loadbalancer.server.port=5066"
-      - "traefik.http.services.relay-sip.loadbalancer.server.scheme=http"
+      - "traefik.tcp.routers.relay-sip.rule=HostSNI(`${SIP_DOMAIN:?Set SIP_DOMAIN}`)"
+      - "traefik.tcp.routers.relay-sip.entrypoints=https"
+      - "traefik.tcp.routers.relay-sip.tls.passthrough=true"
+      - "traefik.tcp.routers.relay-sip.service=relay-sip"
+      - "traefik.tcp.services.relay-sip.loadbalancer.server.port=7443"
 
     environment:
       SIP_DOMAIN: ${SIP_DOMAIN:?Set SIP_DOMAIN}
@@ -33,10 +31,17 @@ services:
       RTP_END: ${RTP_END:-16483}
     expose:
       - "5066"
+      - "7443"
     ports:
       - "${RTP_START:-16384}-${RTP_END:-16483}:${RTP_START:-16384}-${RTP_END:-16483}/udp"
     volumes:
       - freeswitch-state:/var/lib/freeswitch
+      - type: bind
+        source: ${WSS_CERT_DIR:?Set WSS_CERT_DIR to the VPS certificate directory}
+        target: /etc/freeswitch/wss
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD", "python3", "/opt/relay/health.py", "freeswitch"]
       interval: 30s

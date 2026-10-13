@@ -1,6 +1,6 @@
 # relay-server
 
-Minimal SIP/WebRTC calling infrastructure for the Relay Flutter app, deployed by Docker Compose on a Linux VPS through Coolify. Two services: FreeSWITCH and coturn. Coolify's existing proxy terminates TLS for SIP over WSS. No application API, external database, SIP router, or monitoring stack.
+Minimal SIP/WebRTC calling infrastructure for the Relay Flutter app, deployed by Docker Compose on a Linux VPS through Coolify. Two services: FreeSWITCH and coturn. Coolify's Traefik proxy passes SIP TLS through to FreeSWITCH's native WSS listener on internal port 7443; FreeSWITCH terminates TLS. No application API, external database, SIP router, or monitoring stack.
 
 ```text
 Relay Flutter app A ── SIP/WSS ──┐
@@ -38,6 +38,7 @@ Set:
 | Variable | Meaning |
 | --- | --- |
 | `SIP_DOMAIN` | SIP authentication domain, e.g. `sip.example.com`; lowercase DNS hostname |
+| `WSS_CERT_DIR` | Absolute VPS directory containing a trusted combined `wss.pem`; mounted read-only at `/etc/freeswitch/wss`, readable by UID 10001 |
 | `PUBLIC_IP` | Actual public IPv4 address advertised for signaling and media; replace the documentation example |
 | `SIP_EXT_START`, `SIP_EXT_END` | Inclusive numeric user range, default 1001–1099; supports 1–10,000 users, no leading zeroes |
 | `SIP_PASSWORD_SEED` | Stable private seed for distinct extension passwords |
@@ -56,15 +57,15 @@ Ranges must be disjoint. Host and container media ports have identical numbers. 
 2. On the Linux VPS, point DNS A records for `sip.example.com` and `turn.example.com` to `PUBLIC_IP`. Use direct DNS, with any CDN proxy disabled. A typical HTTP CDN does not carry the required UDP media traffic.
 3. In Coolify, create a resource from that Git repository, choose **Docker Compose**, and select `/compose.yaml` as the Compose location. Use the repository root as build context. Keep Compose's explicit port mappings.
 4. Enter all values from `.env.example` into the resource's runtime environment, including the three generated secrets. Do not expose them as build arguments. Use a fresh named FreeSWITCH volume so its initial ownership is set by the image.
-5. Set the **freeswitch service domain** to `https://sip.example.com:5066`. The `:5066` tells Coolify the internal backend port; public clients use `wss://sip.example.com` on **443**, without `:5066`. Coolify must route to the backend using plain HTTP/WS, preserve WebSocket upgrade headers, and issue a trusted certificate for `sip.example.com`. Do not assign a Coolify HTTP domain to coturn.
+5. Prepare the certificate directory below and set `WSS_CERT_DIR` to its absolute VPS path. Use Coolify's **Traefik** proxy with the existing `https` entrypoint on TCP 443. Remove the freeswitch service's normal HTTP domain route in Coolify (including any generated HTTP labels for the SIP hostname). Retain the Compose TCP labels and connect the resource to the proxy's Docker network using Coolify's resource network settings. If the proxy has multiple eligible networks, set `traefik.docker.network` on freeswitch to the actual shared network name. Do not assign a Coolify HTTP domain to coturn. Verify the rendered resource retains the bind mount and TCP labels before deploying.
 6. Open the direct ports below in the VPS firewall and the provider's security group. Behind NAT, also configure upstream forwarding. Docker-published ports can bypass ordinary UFW rules: enforce restrictions at the provider firewall or Docker's forwarding rules as appropriate.
 7. Click **Deploy** when ready. Check build logs and service health, then complete the external verification checklist below. This repository does not trigger deployment, create DNS records, change firewalls, or request certificates itself.
 
-Coolify connects its proxy to the Compose resource network for domain routing. WS port 5066 is only exposed on that network, with no host mapping. Standard SIP port 5060 is not published, and administrative port 8021 remains container-local. See [Coolify networking](https://coolify.io/docs/core/networking-in-coolify) for domain routing versus direct host ports.
+The proxy and freeswitch must share a Docker network even when no Coolify HTTP service domain is assigned. WS port 5066 and WSS port 7443 are exposed internally, with no host mappings. Standard SIP port 5060 is not published, and administrative port 8021 remains container-local. See [Coolify networking](https://coolify.io/docs/core/networking-in-coolify) for domain routing versus direct host ports.
 
 | Public VPS ports (defaults) | Handler | Purpose |
 | --- | --- | --- |
-| TCP 80, 443 | Coolify proxy | Certificate issuance/HTTP redirect and SIP/WSS on 443 |
+| TCP 80, 443 | Coolify proxy | Existing HTTP services on 80; SIP TLS passthrough on 443 |
 | UDP 16384–16483 | Direct Compose mapping to FreeSWITCH | ICE checks, DTLS handshake, SRTP/SRTCP audio/video |
 | UDP and TCP 3478 | Direct Compose mapping to coturn | STUN and authenticated TURN allocation/client transport |
 | UDP 49160–49259 | Direct Compose mapping to coturn | TURN relay sockets exchanging packets with FreeSWITCH |
@@ -80,7 +81,106 @@ docker compose build
 docker compose up -d
 ```
 
-A standalone Compose start still needs a trusted TLS/WebSocket reverse proxy on the same Docker network, forwarding 443 to `freeswitch:5066`; that proxy is intentionally provided by Coolify in the target deployment.
+A standalone Compose start needs TCP/TLS passthrough from 443 to `freeswitch:7443` on the same Docker network, or direct WSS exposure as described below.
+
+## Native WSS and certificates
+
+The previous route terminated WSS at Coolify and sent plain WS to Sofia. REGISTER still advertised `Via: SIP/2.0/WSS`, and Sofia rejected the unsupported transport before authentication. The native profile now renders through `scripts/configure.py` with:
+
+```xml
+<param name="ws-binding" value=":5066"/>
+<param name="wss-binding" value=":7443"/>
+<param name="tls-cert-dir" value="/etc/freeswitch/wss"/>
+```
+
+The existing `tls=false` controls ordinary SIP/TLS, independently of WSS. Authentication, directory users, credentials, dialplan, media and Via validation are unchanged. See the [pinned Sofia implementation](https://github.com/signalwire/freeswitch/blob/ef32e205295e29f034f1453ad245ba5efb07b94a/src/mod/endpoints/mod_sofia/sofia.c) for WSS certificate loading.
+
+The public path must be:
+
+```text
+Flutter -> wss://sip.code4flare.com:443
+        -> Coolify Traefik TCP HostSNI(sip.code4flare.com), TLS passthrough
+        -> FreeSWITCH :7443, TLS termination + native WSS
+```
+
+Compose derives HostSNI from `SIP_DOMAIN`; set it to `sip.code4flare.com` for this deployment. The router uses `traefik.tcp.routers.relay-sip.tls.passthrough=true` and backend port 7443. It has no proxy certificate resolver: FreeSWITCH presents the certificate. Traefik can share 443 with other HTTP services using the specific SIP SNI rule. See [Traefik TCP TLS passthrough](https://doc.traefik.io/traefik/v2.11/routing/routers/#passthrough). Coolify's normal HTTP domain proxy terminates TLS and must not forward this endpoint to WS 5066. Changing only the HTTP backend port to 7443 is insufficient to enable passthrough.
+
+Provision a publicly trusted certificate whose SAN includes `sip.code4flare.com`, plus its unencrypted private key. Use your existing ACME client with DNS-01 and automated renewal; the TCP route does not provide Coolify-managed certificate issuance or renewal for FreeSWITCH. Avoid a CDN TLS terminator in front of this hostname; use DNS-only records. Keep key material outside Git and image builds (`certs/` is already ignored).
+
+For a one-time certificate issuance if no ACME client is configured, run on the VPS and complete the prompted DNS TXT challenge (requires Certbot installed):
+
+```sh
+sudo certbot certonly --manual --preferred-challenges dns -d sip.code4flare.com
+```
+
+Manual DNS challenges require manual renewal. For ongoing operation, configure your DNS provider's Certbot plugin or existing ACME automation to renew and run a deployment hook that installs the renewed files into the mounted directory. Then reload the profile in a maintenance window as below.
+
+Install the issued files without displaying their contents:
+
+```sh
+sudo install -d -o 10001 -g 10001 -m 0750 /opt/relay/certs/wss
+sudo sh -c '
+  set -eu
+  umask 077
+  cat /etc/letsencrypt/live/sip.code4flare.com/fullchain.pem \
+      /etc/letsencrypt/live/sip.code4flare.com/privkey.pem > /opt/relay/certs/wss/wss.pem.new
+  chown 10001:10001 /opt/relay/certs/wss/wss.pem.new
+  chmod 0640 /opt/relay/certs/wss/wss.pem.new
+  mv /opt/relay/certs/wss/wss.pem.new /opt/relay/certs/wss/wss.pem
+'
+```
+
+Set `WSS_CERT_DIR=/opt/relay/certs/wss` in Coolify. Adapt the source paths if your ACME client stores certificates elsewhere. `wss.pem` contains the leaf certificate first, then intermediates from `fullchain.pem`, followed by the unencrypted private key. Mount the **directory**, so renewal can replace files without pinning an old file inode. Do not mount `/etc/letsencrypt/live` alone: its symlinks point outside that directory. The container runs as UID 10001 and must be able to traverse the mounted directory and read `wss.pem`.
+
+This deployment uses the combined `wss.pem` layout read by both the pinned FreeSWITCH certificate precheck and Sofia WSS transport. Native Sofia also supports `wss.key`/`wss.crt`; use only the combined layout here to keep startup checks and certificate installation consistent. Startup checks for readable, nonempty `wss.pem` before generating configuration. FreeSWITCH validates the key/certificate at listener startup; the external test below checks hostname, trust and expiry. The WSS directory is read-only inside the container, separate from the writable `/var/lib/freeswitch/tls` used for media DTLS.
+
+After updating the repository, certificate mount, Coolify environment and routing, manually click **Deploy** for this resource. This recreates FreeSWITCH with its new listener and interrupts active calls. For later certificate renewals, atomically replace the renewed `wss.pem` first, then reload the profile during a maintenance window (also interrupts its calls):
+
+```sh
+docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia profile internal restart"'
+```
+
+If your Coolify proxy cannot preserve these TCP labels or is not Traefik, configure equivalent TCP/TLS passthrough in its supported proxy configuration. A direct alternative requires an available public IP/port 443 and a Compose TCP mapping `443:7443` to FreeSWITCH; do not add it on the same IP where Coolify already owns 443. Public port 7443 alone would require changing the client endpoint, so it does not satisfy the required `wss://sip.code4flare.com` URL. No direct host WSS mapping is added by this change.
+
+## Validate WSS registration after deployment
+
+Run from the deployed Compose project directory on the VPS; in Coolify's freeswitch terminal run only the inner commands:
+
+```sh
+docker compose config --quiet
+docker compose exec freeswitch sh -c 'test -r /etc/freeswitch/wss/wss.pem && test -s /etc/freeswitch/wss/wss.pem'
+docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia status profile internal"'
+```
+
+Expect `WS-BIND-URL ... transport=ws` and `WSS-BIND-URL ... transport=wss` (7443).
+
+From a separate machine with a CA trust store, verify the public certificate and hostname:
+
+```sh
+openssl s_client -connect sip.code4flare.com:443 -servername sip.code4flare.com -verify_hostname sip.code4flare.com -verify_return_error </dev/null
+```
+
+Expect successful verification and the certificate installed for FreeSWITCH. Test WebSocket upgrade with the SIP subprotocol (curl intentionally times out after the successful upgrade because the connection stays open):
+
+```sh
+curl --http1.1 --include --no-buffer --max-time 5 https://sip.code4flare.com/ \
+  -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+  -H 'Sec-WebSocket-Protocol: sip'
+```
+
+Expect `101 Switching Protocols` and `Sec-WebSocket-Protocol: sip`. Neither test alone proves SIP registration. Enable tracing briefly, reconnect extension 1001 in the existing Flutter app with its existing credentials, then inspect recent logs privately:
+
+```sh
+docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia profile internal siptrace on"'
+# Reconnect/register Flutter now; trace can contain Authorization, identities and SDP.
+docker compose logs --since=2m freeswitch
+docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia profile internal siptrace off"'
+docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia status profile internal reg"'
+```
+
+Acceptance: `REGISTER -> 401 Unauthorized -> REGISTER + Authorization -> 200 OK`, no new `invalid transport "SIP/2.0/WSS"` / `REGISTER has invalid Via` messages, and extension 1001 appears in the registration table. Keep trace logs private; do not paste credentials or private keys into support reports. Startup health alone does not prove this external flow.
 
 ## Configure the Relay Flutter SIP client
 
@@ -107,7 +207,7 @@ Use a SIP-over-WebSocket client supporting the `sip` WebSocket subprotocol and W
 ]
 ```
 
-STUN binding discovery is unauthenticated; TURN allocations require the long-term credentials. TURN over TCP is supported for the client-to-coturn connection, while coturn-to-FreeSWITCH relay media remains UDP. **TURN TLS (`turns:`) is not enabled**, and restrictive networks allowing only TLS on 443 may still fail. Coolify's WSS certificate does not secure TURN. Adding TURN TLS requires a separate trusted certificate and direct TLS listener, not an HTTP domain route.
+STUN binding discovery is unauthenticated; TURN allocations require the long-term credentials. TURN over TCP is supported for the client-to-coturn connection, while coturn-to-FreeSWITCH relay media remains UDP. **TURN TLS (`turns:`) is not enabled**, and restrictive networks allowing only TLS on 443 may still fail. The FreeSWITCH WSS certificate does not secure TURN. Adding TURN TLS requires a separate trusted certificate and direct TLS listener, not an HTTP domain route.
 
 Get one extension's credentials on the server:
 
@@ -155,7 +255,7 @@ docker compose exec freeswitch sh -c 'fs_cli -p "$ESL_PASSWORD" -x "sofia profil
 docker compose exec coturn sh -c 'turnutils_uclient -y -u "$TURN_USERNAME" -w "$TURN_PASSWORD" -p "$TURN_PORT" "$PUBLIC_IP"'
 ```
 
-The FreeSWITCH health check verifies process responsiveness through loopback ESL, the running internal SIP profile, and Opus/VP8 availability. It does not probe the WS bind address; failures report fixed diagnostics without credential-bearing command arguments or raw subprocess output. The coturn health check verifies a local STUN response. They do **not** verify trusted TLS, authenticated TURN allocations, or external media reachability. The self-contained TURN test is useful but still originates on the VPS. Run an equivalent test from a separate network as well. For TCP client transport, add `-t` to `turnutils_uclient`.
+The FreeSWITCH health check verifies process responsiveness through loopback ESL, the running internal SIP profile, and Opus/VP8 availability. It does not probe the WS/WSS bind addresses; failures report fixed diagnostics without credential-bearing command arguments or raw subprocess output. The coturn health check verifies a local STUN response. They do **not** verify trusted TLS, authenticated TURN allocations, or external media reachability. The self-contained TURN test is useful but still originates on the VPS. Run an equivalent test from a separate network as well. For TCP client transport, add `-t` to `turnutils_uclient`.
 
 Before considering a deployment ready:
 
@@ -175,7 +275,7 @@ For failed media, inspect SDP for `PUBLIC_IP`, `opus`, `VP8`, ICE credentials/ca
 python3 -m unittest discover -s tests -v
 ```
 
-Tests cover compact range patterns and rejected destinations (including 10,000-user ranges), sanitized health failures and ESL readiness, distinct/stable credentials and digest hashes, unsafe/missing configuration, TURN NAT mapping, and overlapping ports. Docker image builds and real two-client calls must still be validated on a Docker-enabled Linux host; Docker is unavailable in the authoring workspace, so runtime interoperability is not claimed as tested here.
+Tests cover generated native WS/WSS listener settings, compact range patterns and rejected destinations (including 10,000-user ranges), sanitized health failures and ESL readiness, distinct/stable credentials and digest hashes, unsafe/missing configuration, TURN NAT mapping, and overlapping ports. Docker image builds and real two-client calls must still be validated on a Docker-enabled Linux host; Docker is unavailable in the authoring workspace, so runtime interoperability is not claimed as tested here.
 
 Before writing this repository, the reference's complete `deploy/freeswitch` tree was inspected at commit [`562968b`](https://github.com/builds-toqyo/telephony-platform/tree/562968b89d8b042b253db0fe1cdcc358e61f3d75/deploy/freeswitch). Relevant patterns retained: Sofia `sip-ip`/`rtp-ip` and external address settings, explicit RTP ranges, XML directory credentials, and local `user/…@domain` bridging. Its checked-in profile has no WS/WSS binding, its module list does not load Opus, and it has demo passwords, public ESL binding, and unrelated routing/features. These were not carried over. Relay adds the missing WebRTC configuration using upstream FreeSWITCH guidance; the reference is not evidence of a tested Relay deployment.
 

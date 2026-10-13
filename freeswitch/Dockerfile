@@ -51,5 +51,5 @@ COPY scripts/configure.py scripts/health.py /opt/relay/
 COPY freeswitch/conf/ /opt/relay/templates/
 COPY freeswitch/entrypoint.sh /opt/relay/entrypoint.sh
 USER freeswitch
-EXPOSE 5066/tcp
+EXPOSE 5066/tcp 7443/tcp
 ENTRYPOINT ["sh", "/opt/relay/entrypoint.sh"]

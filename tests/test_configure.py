@@ -33,6 +33,17 @@ class ConfigurationTests(unittest.TestCase):
     def render(self):
         configure.render_freeswitch(self.output, ROOT / 'freeswitch/conf')
 
+    def test_rendered_profile_has_native_ws_and_wss(self):
+        self.render()
+        settings = {
+            param.get('name'): param.get('value')
+            for param in ET.parse(self.output / 'sip_profiles/internal.xml').findall('./settings/param')
+        }
+        self.assertEqual(settings['ws-binding'], ':5066')
+        self.assertEqual(settings['wss-binding'], ':7443')
+        self.assertEqual(settings['tls-cert-dir'], '/etc/freeswitch/wss')
+        self.assertEqual(settings['tls'], 'false')  # SIP/TLS is independent of WSS.
+
     def test_range_authentication_and_dialplan_agree(self):
         self.render()
         users = ET.parse(self.output / 'directory.xml').findall('.//user')
