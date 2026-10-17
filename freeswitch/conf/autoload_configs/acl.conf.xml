@@ -1,0 +1,13 @@
+<configuration name="acl.conf" description="WebRTC candidate addresses">
+  <network-lists>
+    <!-- Public and RFC1918 IPv4 candidates are eligible; loopback is not.
+         Keep wan_v4.auto's other IPv4 exclusions without excluding LANs. -->
+    <list name="relay-ice-v4" default="deny">
+      <node type="allow" cidr="0.0.0.0/0"/>
+      <node type="deny" cidr="0.0.0.0/8"/>
+      <node type="deny" cidr="127.0.0.0/8"/>
+      <node type="deny" cidr="169.254.0.0/16"/>
+      <node type="deny" cidr="100.64.0.0/10"/>
+    </list>
+  </network-lists>
+</configuration>

@@ -29,8 +29,10 @@
     <param name="outbound-codec-prefs" value="$${global_codec_prefs}"/>
     <param name="inbound-codec-negotiation" value="generous"/>
     <param name="inbound-late-negotiation" value="true"/>
-    <param name="local-network-acl" value="localnet.auto"/>
-    <param name="apply-candidate-acl" value="wan_v4.auto"/>
+    <!-- WSS peers on the Docker subnet still need the external media address. -->
+    <param name="local-network-acl" value="none"/>
+    <!-- wan_v4.auto also allows loopback in the pinned FreeSWITCH version. -->
+    <param name="apply-candidate-acl" value="relay-ice-v4"/>
     <param name="dtmf-type" value="rfc2833"/>
     <param name="rtp-timer-name" value="soft"/>
     <param name="rtp-timeout-sec" value="60"/>

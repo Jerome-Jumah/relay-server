@@ -48,7 +48,7 @@ Set:
 | `TURN_PORT` | STUN/TURN listener, default 3478, UDP and TCP |
 | `TURN_MIN_PORT`, `TURN_MAX_PORT` | coturn UDP relay range, default 49160–49259 |
 
-Ranges must be disjoint. Host and container media ports have identical numbers. This deployment supports IPv4 and Docker bridge networking. Behind upstream NAT, forward these same ports one-to-one to the VPS private address and set `PUBLIC_IP` to the public address. Both Docker NAT and upstream NAT must preserve media port numbers. It does not support a VPS behind CGNAT without inbound forwarding. The local container addresses are determined at startup; do not put Docker private addresses into `PUBLIC_IP`. The client ICE ACL accepts public IPv4 candidates, including TURN relay candidates; private-only LAN candidates are deliberately filtered.
+Ranges must be disjoint. Host and container media ports have identical numbers. This deployment supports IPv4 and Docker bridge networking. Behind upstream NAT, forward these same ports one-to-one to the VPS private address and set `PUBLIC_IP` to the public address. Both Docker NAT and upstream NAT must preserve media port numbers. It does not support a VPS behind CGNAT without inbound forwarding. The local container addresses are determined at startup; do not put Docker private addresses into `PUBLIC_IP`. The `relay-ice-v4` client ICE ACL accepts public IPv4 candidates (including TURN relay candidates) and RFC1918 LAN candidates, while denying loopback, unspecified, link-local, and CGNAT ranges. Eligibility does not guarantee a route to a client's private LAN.
 
 ## Deploy manually with Coolify
 
@@ -224,7 +224,7 @@ The dialplan represents the inclusive extension range using compact decimal-pref
 
 - **Signaling** is SIP messages over WSS: register, invite, ring, answer, negotiate SDP, and hang up. **Media** is the actual encrypted audio/video in SRTP packets on separate UDP sockets. WSS encryption alone does not secure or transport media; WebRTC uses DTLS-SRTP.
 - **SIP registration** authenticates an extension and associates its SIP identity with a current contact/connection. FreeSWITCH uses that registered contact when bridging a call to `user/extension@domain`. Calls also require SIP authentication; the dialplan only routes configured extensions.
-- **ICE** gathers candidate addresses and tests candidate pairs to select a usable client-to-FreeSWITCH media path. FreeSWITCH advertises the configured public IP and accepts public client/relay candidates.
+- **ICE** gathers candidate addresses and tests candidate pairs to select a usable client-to-FreeSWITCH media path. `local-network-acl=none` makes FreeSWITCH use the configured external RTP address even when a WSS peer appears on the Docker subnet. The pinned version can advertise this public address as `typ host`; a separate `typ srflx` entry requires both address and port to differ from the local socket. `relay-ice-v4` explicitly denies `127.0.0.0/8`: the built-in `wan_v4.auto` in this version does not. Public client/relay and RFC1918 LAN candidates remain eligible.
 - **STUN** lets a client learn its public address/port as seen through NAT. It helps discover a candidate but does not relay media or guarantee reachability.
 - **TURN** allocates an authenticated relay address when a usable direct path is unavailable. The client connects to coturn; coturn exchanges packets with FreeSWITCH. TURN belongs in the client's ICE settings: FreeSWITCH does not request a TURN allocation itself.
 
