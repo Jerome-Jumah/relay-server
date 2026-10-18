@@ -7,6 +7,9 @@
         <!-- The receiving leg must offer WebRTC media, even before its answer. -->
         <action application="export" data="nolocal:media_webrtc=true"/>
         <action application="export" data="nolocal:rtp_secure_media=true"/>
+        <!-- Preserve initial call intent independently of dormant video in SDP. -->
+        <action application="set" data="sip_copy_custom_headers=false"/>
+        <action application="export" data="nolocal:sip_h_X-Relay-Call-Mode=${sip_h_X-Relay-Call-Mode}"/>
         <action application="bridge" data="user/${destination_number}@$${domain}"/>
       </condition>
     </extension>
