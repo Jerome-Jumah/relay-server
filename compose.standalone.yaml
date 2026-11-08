@@ -1,0 +1,73 @@
+name: relay-server
+services:
+  freeswitch:
+    build:
+      context: .
+      dockerfile: freeswitch/Dockerfile
+    restart: unless-stopped
+
+    cap_add:
+      - SYS_NICE
+
+    environment:
+      SIP_DOMAIN: ${SIP_DOMAIN:?Set SIP_DOMAIN}
+      PUBLIC_IP: ${PUBLIC_IP:?Set PUBLIC_IP}
+      SIP_EXT_START: ${SIP_EXT_START:-1001}
+      SIP_EXT_END: ${SIP_EXT_END:-1099}
+      SIP_PASSWORD_SEED: ${SIP_PASSWORD_SEED:?Set SIP_PASSWORD_SEED}
+      ESL_PASSWORD: ${ESL_PASSWORD:?Set ESL_PASSWORD}
+      RTP_START: ${RTP_START:-16384}
+      RTP_END: ${RTP_END:-16483}
+
+    ports:
+      # Standalone WSS listener: default 7443, or 443 if no reverse proxy is on the host
+      - "${WSS_PORT:-7443}:7443/tcp"
+      # Direct UDP RTP media range
+      - "${RTP_START:-16384}-${RTP_END:-16483}:${RTP_START:-16384}-${RTP_END:-16483}/udp"
+
+    volumes:
+      - freeswitch-state:/var/lib/freeswitch
+      - type: bind
+        source: ${WSS_CERT_DIR:-./certs/wss}
+        target: /etc/freeswitch/wss
+        read_only: true
+        bind:
+          create_host_path: false
+
+    healthcheck:
+      test: ["CMD", "python3", "/opt/relay/health.py", "freeswitch"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 30s
+
+  coturn:
+    build:
+      context: .
+      dockerfile: coturn/Dockerfile
+    restart: unless-stopped
+    environment:
+      PUBLIC_IP: ${PUBLIC_IP:?Set PUBLIC_IP}
+      TURN_REALM: ${TURN_REALM:?Set TURN_REALM}
+      TURN_USERNAME: ${TURN_USERNAME:?Set TURN_USERNAME}
+      TURN_PASSWORD: ${TURN_PASSWORD:?Set TURN_PASSWORD}
+      TURN_PORT: ${TURN_PORT:-3478}
+      TURN_MIN_PORT: ${TURN_MIN_PORT:-49160}
+      TURN_MAX_PORT: ${TURN_MAX_PORT:-49259}
+      RTP_START: ${RTP_START:-16384}
+      RTP_END: ${RTP_END:-16483}
+    ports:
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/udp"
+      - "${TURN_PORT:-3478}:${TURN_PORT:-3478}/tcp"
+      - "${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}:${TURN_MIN_PORT:-49160}-${TURN_MAX_PORT:-49259}/udp"
+    healthcheck:
+      test: ["CMD", "python3", "/opt/relay/health.py", "coturn"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    stop_grace_period: 10s
+
+volumes:
+  freeswitch-state:

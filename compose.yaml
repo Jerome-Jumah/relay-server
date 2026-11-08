@@ -11,7 +11,6 @@ services:
 
     labels:
       - "coolify.managed=true"
-      - "coolify.applicationId=14"
       - "coolify.type=application"
       - "traefik.enable=true"
       - "traefik.tcp.routers.relay-sip.rule=HostSNI(`${SIP_DOMAIN:?Set SIP_DOMAIN}`)"
